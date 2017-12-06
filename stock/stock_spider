@@ -1,0 +1,97 @@
+# -*-coding:utf-8-*-
+from bs4 import BeautifulSoup
+import requests
+import pymongo
+# import re
+
+
+
+
+client =pymongo.MongoClient('localhost', 27017) #连接数据库
+sense = client['stock'] #创建数据库
+ceshi = sense['stockList'] #创建数据库表
+
+
+
+
+
+
+
+def getHTMLText(url, code="utf-8"):
+    try:
+        r = requests.get(url, timeout=30)
+        r.raise_for_status
+        # r.encoding = r.apparent_encoding
+        r.encoding = code  # 编码识别优化
+        return r.text
+    except:
+        return ""
+# 获取列表代码
+def getStockList(stock_list,stock_list_url):
+    html = getHTMLText(stock_list_url, "utf-8")
+    soup = BeautifulSoup(html, "lxml")
+    a = soup.select('#quotesearch > ul > li > a')
+    for i in a:
+        try:
+            href = i.attrs["href"]  # 相当于i.get("href")
+            st = href.split('/')[3].strip('.html')
+            stock_list.append(st)
+            # stock_list.append(re.findall(r's[zh]\d{6}', href)[0])
+        except:
+            continue
+# 获取股票信息
+def getStockinfo(stock_list, stock_info_url):
+    count = 0
+    for stockCode in stock_list:
+        url = stock_info_url + stockCode + ".html"
+
+        html = getHTMLText(url)
+        # print(stock_info_url + stockCode + ".html")
+        try:
+            if html == "":
+                continue
+            infoDict = {}
+            stockInfo = BeautifulSoup(html, "lxml")
+
+            name = stockInfo.select('h1 > a.bets-name')[0]
+            infoDict.update({"股票名称": name.text.split()[0]})  # Python 字典(Dictionary) update() 函数把一个字典dict2的键/值对更新到一个新的字典dict里。
+
+
+            infoDict.update({'url': url, 'stockCode': stockCode})
+            key_list = stockInfo.select("dt")
+            value_list = stockInfo.select("dd")
+            # print(key_list)
+            # print('---------------')
+            # print(value_list)
+            # print('---------------')
+            for i in range(len(key_list)):
+
+                # infoDict.update({'price': price[i].sting})
+                key = key_list[i].text  # 也可以使用.string
+                value = value_list[i].string
+                infoDict[key] = value
+            count = count + 1
+            print("\r当前进度：{:.2f}%".format(count * 100 / len(stock_list)), end="")
+            print(infoDict)
+
+        except:
+
+            count = count + 1
+            print("\r当前进度：{:.2f}%".format(count * 100 / len(stock_list)), end="")
+            print({'查无此股': stockCode})
+            continue
+
+        ceshi.insert(infoDict)
+
+
+
+
+
+def main():
+    stock_list_url = "http://quote.eastmoney.com/stocklist.html"
+    stock_info_url = "https://gupiao.baidu.com/stock/"
+    stock_list = []
+    getStockList(stock_list, stock_list_url)
+    getStockinfo(stock_list, stock_info_url)
+
+main()
